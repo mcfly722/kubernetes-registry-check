@@ -114,7 +114,9 @@ func newRegistryPool(k8s *k8s, namespace string, output chan RegistryConnectionR
 				_, registryIsAlreadyExists :=registries[key]
 				if !registryIsAlreadyExists {
 					// add new registry check
-					fmt.Println(fmt.Sprintf("adding registry check:%v (%v / user:%v)",registry.Url,registry.UserName))
+					registries[key] = registry
+					
+					fmt.Println(fmt.Sprintf("adding registry check:%v (%v / user:%v)",registry.Name,registry.Url,registry.UserName))
 				}
 			}
 
@@ -122,7 +124,9 @@ func newRegistryPool(k8s *k8s, namespace string, output chan RegistryConnectionR
 				_, registryIsAlreadyExists :=obtained_registries[key]
 				if !registryIsAlreadyExists {
 					// deleting outdated registry checks
-					fmt.Println(fmt.Sprintf("deleting registry check: (%v / user:%v)",registry.Url,registry.UserName))
+					fmt.Println(fmt.Sprintf("deleting registry check: (%v / user:%v)",registry.Name,registry.Url,registry.UserName))
+					
+					delete(registries, key)
 				}
 			}
 		
