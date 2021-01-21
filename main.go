@@ -4,24 +4,22 @@ import (
 	"fmt"
 	"time"
 	"flag"
-	"encoding/base64"
+	"encoding/json"
 	
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
-/*
+type DockerAuth struct {
+	Auth     string
+	UserName string
+	Password string
+}
+
 type DockerAuths struct {
-	
-
+	Auths map[string]DockerAuth
 }
-
-type DockerJson struct {
-	Auths DockerAuths
-
-}
-*/
 
 type Registry struct {
 	Name     string
@@ -50,9 +48,9 @@ func newK8s() (*k8s, error) {
 	return &client, nil
 }
 
-func getRegistries(k8s *k8s, namespace string) ([]Registry, error) {
+func getRegistries(k8s *k8s, namespace string) (map[string]Registry, error) {
 
-	registries := []Registry{}
+	registries := map[string]Registry{}
 
 	secrets, err := k8s.clientset.CoreV1().Secrets(namespace).List(metav1.ListOptions{})
 	if err != nil {
@@ -63,22 +61,26 @@ func getRegistries(k8s *k8s, namespace string) ([]Registry, error) {
 	
 		b64data, ok := secret.Data[".dockerconfigjson"]
 		if ok {
-		
-			fmt.Println(fmt.Sprintf("[%v] : (%v)", secret.ObjectMeta.Name, string(b64data)))
-			jsonData, err := base64.StdEncoding.DecodeString(string(b64data))
+			var auths DockerAuths 
 			
+			err := json.Unmarshal(b64data, &auths)
 			if err != nil {
 				fmt.Println("decoding %v error:", secret.ObjectMeta.Name, err)
 			} else {
 			
-				registry := Registry {
-					Name    : secret.ObjectMeta.Name,
-					Url     : string(jsonData),
-					UserName: "one",
-					Password: "two",
+				for key := range auths.Auths{
+					_, keyIsAlreadyExists :=registries[key]
+					
+					if !keyIsAlreadyExists {
+						registries[key] = Registry {
+							Name    : secret.ObjectMeta.Name,
+							Url     : key,
+							UserName: auths.Auths[key].UserName,
+							Password: auths.Auths[key].Password,
+						}
+					}
+					
 				}
-	
-				registries = append(registries, registry)
 			}
 		}
 	}
@@ -104,7 +106,7 @@ func main() {
 	}
 	fmt.Println(fmt.Sprintf("Started"))
 	
-	registries,err := getRegistries(k8s, *namespaceFlag)
+	registries, err := getRegistries(k8s, *namespaceFlag)
 	if err != nil {
 		panic(err)
 	}
