@@ -4,15 +4,27 @@ import (
 	"fmt"
 	"time"
 	"flag"
+	"encoding/base64"
 	
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
+/*
+type DockerAuths struct {
+	
+
+}
+
+type DockerJson struct {
+	Auths DockerAuths
+
+}
+*/
+
 type Registry struct {
 	Name     string
-	Type     string
 	Url      string
 	UserName string
 	Password string
@@ -47,25 +59,24 @@ func getRegistries(k8s *k8s, namespace string) ([]Registry, error) {
 		return nil, err
 	}
 	
-	
 	for _,secret :=range secrets.Items {
+
+		for key := range secret.Data {
+			if key == ".dockerconfigjson" {
+				data, err := base64.StdEncoding.DecodeString(string(secret.Data[key][:]))
+				if err == nil {
+
+					registry := Registry {
+						Name    : secret.ObjectMeta.Name,
+						Url     : string(data[:]),
+						UserName: "one",
+						Password: "two",
+					}
 		
-		keys := make([]string, 0, len(secret.Data))
-		for k := range secret.Data {
-			keys = append(keys, k)
+					registries = append(registries, registry)
+				}
+			}
 		}
-	
-		registry := Registry{
-			Name    : secret.ObjectMeta.Name,
-			Type    : secret.TypeMeta.Kind,
-			Url     : fmt.Sprintf("%v",keys),
-			UserName: "one",
-			Password: "two",
-		}
-		
-		registries = append(registries,registry)
-		
-	
 	}
 	
 
@@ -95,7 +106,7 @@ func main() {
 	}
 	
 	for i,_ := range registries {
-		fmt.Println(fmt.Sprintf("registry:%v type:%v url:%v user:%v password:%v",registries[i].Name,registries[i].Type,registries[i].Url,registries[i].UserName,registries[i].Password))
+		fmt.Println(fmt.Sprintf("registry:%v url:%v user:%v password:%v",registries[i].Name,registries[i].Url,registries[i].UserName,registries[i].Password))
 	}
 	
 	time.Sleep(8 * time.Second) 
