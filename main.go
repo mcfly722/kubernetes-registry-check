@@ -112,7 +112,7 @@ func main() {
 	}
 	
 	for _,r := range registries {
-		fmt.Println(fmt.Sprintf("registry:%v url:%v user:%v password:%v",r.Name,r.Url,r.UserName,r.Password))
+		fmt.Println(fmt.Sprintf("registry:%v url:%v user:%v",r.Name,r.Url,r.UserName))
 	}
 	
 	time.Sleep(8 * time.Second) 
