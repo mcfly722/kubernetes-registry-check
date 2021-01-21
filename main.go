@@ -60,28 +60,31 @@ func getRegistries(k8s *k8s, namespace string) ([]Registry, error) {
 	}
 	
 	for _,secret :=range secrets.Items {
-		for key := range secret.Data {
-			if key == ".dockerconfigjson" {
-				fmt.Println(fmt.Sprintf("[%v]", secret.ObjectMeta.Name))
-			
-				data, err := base64.StdEncoding.DecodeString(string(secret.Data[key]))
-				if err == nil {
-
-					registry := Registry {
-						Name    : secret.ObjectMeta.Name,
-						Url     : string(data),
-						UserName: "one",
-						Password: "two",
-					}
+	
+		b64data, ok := secret.Data[".dockerconfigjson"]
+		if ok {
 		
-					registries = append(registries, registry)
-				} 
+			fmt.Println(fmt.Sprintf("[%v] : (%v)", secret.ObjectMeta.Name, string(b64data)))
+			jsonData, err := base64.StdEncoding.DecodeString(string(b64data))
+			
+			if err != nil {
+				fmt.Println("decoding %v error:", secret.ObjectMeta.Name, err)
+			} else {
+			
+				registry := Registry {
+					Name    : secret.ObjectMeta.Name,
+					Url     : string(jsonData),
+					UserName: "one",
+					Password: "two",
+				}
+	
+				registries = append(registries, registry)
 			}
 		}
 	}
 	
 
-	return registries,nil
+	return registries, nil
 }
 
 
@@ -106,8 +109,8 @@ func main() {
 		panic(err)
 	}
 	
-	for i,_ := range registries {
-		fmt.Println(fmt.Sprintf("registry:%v url:%v user:%v password:%v",registries[i].Name,registries[i].Url,registries[i].UserName,registries[i].Password))
+	for _,r := range registries {
+		fmt.Println(fmt.Sprintf("registry:%v url:%v user:%v password:%v",r.Name,r.Url,r.UserName,r.Password))
 	}
 	
 	time.Sleep(8 * time.Second) 
