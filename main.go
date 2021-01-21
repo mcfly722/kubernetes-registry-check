@@ -11,14 +11,25 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-type DockerAuth struct {
+type RegistryConnectionResultRecord struct {
+	Url         string
+	Message     string
+	Success     bool
+}
+
+func (record *RegistryConnectionResultRecord) toString() string {
+	json, _ := json.Marshal(record)
+	return string(json)
+}
+
+type RegistryAuth struct {
 	Auth     string
 	UserName string
 	Password string
 }
 
-type DockerAuths struct {
-	Auths map[string]DockerAuth
+type RegistryAuths struct {
+	Auths map[string]RegistryAuth
 }
 
 type Registry struct {
@@ -48,9 +59,9 @@ func newK8s() (*k8s, error) {
 	return &client, nil
 }
 
-func getRegistries(k8s *k8s, namespace string) (map[string]Registry, error) {
+func getRegistries(k8s *k8s, namespace string) (map[string]*Registry, error) {
 
-	registries := map[string]Registry{}
+	registries := map[string]*Registry{}
 
 	secrets, err := k8s.clientset.CoreV1().Secrets(namespace).List(metav1.ListOptions{})
 	if err != nil {
@@ -61,7 +72,7 @@ func getRegistries(k8s *k8s, namespace string) (map[string]Registry, error) {
 	
 		b64data, ok := secret.Data[".dockerconfigjson"]
 		if ok {
-			var auths DockerAuths 
+			var auths RegistryAuths 
 			
 			err := json.Unmarshal(b64data, &auths)
 			if err != nil {
@@ -72,7 +83,7 @@ func getRegistries(k8s *k8s, namespace string) (map[string]Registry, error) {
 					_, keyIsAlreadyExists :=registries[key]
 					
 					if !keyIsAlreadyExists {
-						registries[key] = Registry {
+						registries[key] = &Registry {
 							Name    : secret.ObjectMeta.Name,
 							Url     : key,
 							UserName: auths.Auths[key].UserName,
@@ -89,15 +100,51 @@ func getRegistries(k8s *k8s, namespace string) (map[string]Registry, error) {
 	return registries, nil
 }
 
+func newRegistryPool(k8s *k8s, namespace string, output chan RegistryConnectionResultRecord,configRefreshInterval time.Duration, pingIntervalSec int) {
+
+	registries := map[string]*Registry{}
+	
+	for {
+		obtained_registries, err := getRegistries(k8s, namespace)
+		if err != nil {
+			fmt.Println(fmt.Sprintf("error: %v", err))
+		} else {
+			
+			for key,registry := range obtained_registries {
+				_, registryIsAlreadyExists :=registries[key]
+				if !registryIsAlreadyExists {
+					// add new registry check
+					fmt.Println(fmt.Sprintf("adding registry check:%v (%v / user:%v)",registry.Url,registry.UserName))
+				}
+			}
+
+			for key,registry := range registries {
+				_, registryIsAlreadyExists :=obtained_registries[key]
+				if !registryIsAlreadyExists {
+					// deleting outdated registry checks
+					fmt.Println(fmt.Sprintf("deleting registry check: (%v / user:%v)",registry.Url,registry.UserName))
+				}
+			}
+		
+		}
+		time.Sleep(configRefreshInterval)
+	}
+
+}
 
 func main() {
 	var namespaceFlag *string
+	var updateConfigSecFlag *int
+	var checkIntervalSecFlag *int
 
+	updateConfigSecFlag = flag.Int("updateConfigIntervalSec", 30, "interval in seconds between asking cluster for ping pods configuration")
+	checkIntervalSecFlag = flag.Int("checkIntervalSec", 3, "interval between registry checks")
 	namespaceFlag = flag.String("namespace", "monitoring", "current pod namespace where search registry secret records")
 
 	flag.Parse()
 
 	fmt.Println(fmt.Sprintf("namespace = %s", *namespaceFlag))
+	fmt.Println(fmt.Sprintf("updateConfigIntervalSec = %v", *updateConfigSecFlag))
 
 
 	k8s, err := newK8s()
@@ -106,14 +153,23 @@ func main() {
 	}
 	fmt.Println(fmt.Sprintf("Started"))
 	
-	registries, err := getRegistries(k8s, *namespaceFlag)
-	if err != nil {
-		panic(err)
-	}
 	
-	for _,r := range registries {
-		fmt.Println(fmt.Sprintf("registry:%v url:%v user:%v",r.Name,r.Url,r.UserName))
-	}
 	
-	time.Sleep(8 * time.Second) 
+	output := make(chan RegistryConnectionResultRecord)
+
+	go func() {
+		newRegistryPool(k8s, *namespaceFlag, output, time.Duration(*updateConfigSecFlag)*time.Second, *checkIntervalSecFlag)
+	}()
+
+	// write to output all records
+	for {
+		time.Sleep(10 * time.Millisecond)
+
+		record, ok := <-output
+		if !ok {
+			break
+		}
+
+		fmt.Println(record.toString())
+	}
 }
