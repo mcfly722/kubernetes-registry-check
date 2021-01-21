@@ -39,6 +39,15 @@ type Registry struct {
 	Password string
 }
 
+type RegistryChecker struct {
+	Done chan struct{}
+}
+
+func (checker *RegistryChecker) Destroy() {
+	close(checker.Done)
+}
+
+
 type k8s struct {
 	clientset kubernetes.Interface
 }
@@ -100,33 +109,72 @@ func getRegistries(k8s *k8s, namespace string) (map[string]*Registry, error) {
 	return registries, nil
 }
 
-func newRegistryPool(k8s *k8s, namespace string, output chan RegistryConnectionResultRecord,configRefreshInterval time.Duration, pingIntervalSec int) {
+func newRegistryChecker(registry *Registry, intervalSec int, output chan RegistryConnectionResultRecord) (*RegistryChecker, error) {
 
-	registries := map[string]*Registry{}
+	checker := RegistryChecker{
+		Done: make(chan struct{}),
+	}
+	
+	go func() {
+		working:
+			for {
+				select {
+					case <-checker.Done:
+						break working
+					default:
+					{
+						record := RegistryConnectionResultRecord{
+							Url    : registry.Url,
+							Message: registry.UserName,
+							Success: true,
+						}
+						
+						output <- record
+						
+						time.Sleep(time.Duration(intervalSec)*time.Second)
+
+					}
+				}
+			}
+		fmt.Println(fmt.Sprintf("checker for '%v' registry has finished", registry.Name))
+	}()
+	
+	return &checker, nil
+}
+
+func newRegistryPool(k8s *k8s, namespace string, output chan RegistryConnectionResultRecord,configRefreshInterval time.Duration, checkIntervalSec int) {
+
+	checkers := map[string]*RegistryChecker{}
 	
 	for {
-		obtained_registries, err := getRegistries(k8s, namespace)
+		registries, err := getRegistries(k8s, namespace)
 		if err != nil {
 			fmt.Println(fmt.Sprintf("error: %v", err))
 		} else {
 			
-			for key,registry := range obtained_registries {
-				_, registryIsAlreadyExists :=registries[key]
-				if !registryIsAlreadyExists {
+			for key,registry := range registries {
+				_, registryIsAlreadyChecking :=checkers[key]
+				if !registryIsAlreadyChecking {
 					// add new registry check
-					registries[key] = registry
 					
-					fmt.Println(fmt.Sprintf("adding registry check:%v (%v / user:%v)",registry.Name,registry.Url,registry.UserName))
+					checker,err := newRegistryChecker(registry, checkIntervalSec, output)
+					if err!=nil {
+						fmt.Println(fmt.Sprintf("error for %v: %v", registry.Name,err))
+					} else {
+						checkers[key] = checker
+						fmt.Println(fmt.Sprintf("added registry check:%v (%v / user:%v)",registry.Name,registry.Url,registry.UserName))
+					}
 				}
 			}
 
-			for key,registry := range registries {
-				_, registryIsAlreadyExists :=obtained_registries[key]
-				if !registryIsAlreadyExists {
+			for key,checker := range checkers {
+				_, checkerIsAlreadyExists :=registries[key]
+				if !checkerIsAlreadyExists {
 					// deleting outdated registry checks
-					fmt.Println(fmt.Sprintf("deleting registry check: (%v / user:%v)",registry.Name,registry.Url,registry.UserName))
+					fmt.Println(fmt.Sprintf("deleted registry check: %v",key))
 					
-					delete(registries, key)
+					checker.Destroy()
+					delete(checkers, key)
 				}
 			}
 		
