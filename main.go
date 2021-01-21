@@ -60,21 +60,22 @@ func getRegistries(k8s *k8s, namespace string) ([]Registry, error) {
 	}
 	
 	for _,secret :=range secrets.Items {
-
 		for key := range secret.Data {
 			if key == ".dockerconfigjson" {
-				data, err := base64.StdEncoding.DecodeString(string(secret.Data[key][:]))
+				fmt.Println(fmt.Sprintf("[%v]", secret.ObjectMeta.Name))
+			
+				data, err := base64.StdEncoding.DecodeString(string(secret.Data[key]))
 				if err == nil {
 
 					registry := Registry {
 						Name    : secret.ObjectMeta.Name,
-						Url     : string(data[:]),
+						Url     : string(data),
 						UserName: "one",
 						Password: "two",
 					}
 		
 					registries = append(registries, registry)
-				}
+				} 
 			}
 		}
 	}
