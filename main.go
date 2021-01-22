@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -113,41 +112,43 @@ func getRegistries(k8s *k8s, namespace string) (map[string]*Registry, error) {
 
 func checkRegistry(url string, userName string, password string) *RegistryConnectionResultRecord {
 
-	response := &RegistryConnectionResultRecord{
+	result := &RegistryConnectionResultRecord{
 		Url:     url,
 		Success: false,
 	}
 
 	fullUrl := fmt.Sprintf("https://%v/v2/_catalog", url)
 
-	encodedCredentials := base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%v:%v", userName, password)))
-
-	fmt.Println(fmt.Sprintf("http request: %v creds:%v", fullUrl, encodedCredentials))
-
 	transport := &http.Transport{
         TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
     }
+	
     client := &http.Client{Transport: transport}
 	
-	request, err := client.Get(fullUrl)
+	request, err := http.NewRequest("GET", fullUrl, nil)
 	if err != nil {
-		response.Message = err.Error()
-		return response
+		result.Message = err.Error()
+		return result
 	}
 
-	request.Header.Add("Authorization", fmt.Sprintf("Basic %v", encodedCredentials))
-
-
-
-	body, err := ioutil.ReadAll(request.Body)
+	request.SetBasicAuth(userName, password)
+	
+	response, err := client.Do(request)
 	if err != nil {
-		response.Message = err.Error()
-		return response
+		result.Message = err.Error()
+		return result
 	}
 
-	response.Message = string(body)
-	response.Success = true
-	return response
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		result.Message = err.Error()
+		return result
+	}
+
+	result.Message = string(body)
+	result.Success = true
+	
+	return result
 }
 
 func newRegistryChecker(registry *Registry, intervalSec int, output chan RegistryConnectionResultRecord, checkRegistry func(url string, userName string, password string) *RegistryConnectionResultRecord) (*RegistryChecker, error) {
