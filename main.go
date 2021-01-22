@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"crypto/tls"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -123,7 +124,12 @@ func checkRegistry(url string, userName string, password string) *RegistryConnec
 
 	fmt.Println(fmt.Sprintf("http request: %v", fullUrl))
 
-	request, err := http.Get(fullUrl)
+	transport := &http.Transport{
+        TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+    }
+    client := &http.Client{Transport: transport}
+	
+	request, err := client.Get(fullUrl)
 	if err != nil {
 		response.Message = err.Error()
 		return response
