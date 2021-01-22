@@ -46,9 +46,15 @@ type RegistryChecker struct {
 	Done chan struct{}
 }
 
+type RegistryError struct {
+	Code    string
+	Message string
+	Detail  string
+}
+
 type RegistryRepositories struct {
 	Repositories []string
-	Message      string
+	Errors       []RegistryError
 }
 
 func (checker *RegistryChecker) Destroy() {
@@ -158,8 +164,8 @@ func checkRegistry(url string, userName string, password string) *RegistryConnec
 		return result
 	}
 
-	if len(registryRepositories.Message) > 0 {
-		result.Message = registryRepositories.Message
+	if len(registryRepositories.Errors) > 0 {
+		result.Message = string(body)
 		return result
 	}
 
