@@ -122,7 +122,7 @@ func checkRegistry(url string, userName string, password string) *RegistryConnec
 
 	encodedCredentials := base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%v:%v", userName, password)))
 
-	fmt.Println(fmt.Sprintf("http request: %v", fullUrl))
+	fmt.Println(fmt.Sprintf("http request: %v creds:%v", fullUrl, encodedCredentials))
 
 	transport := &http.Transport{
         TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -135,7 +135,7 @@ func checkRegistry(url string, userName string, password string) *RegistryConnec
 		return response
 	}
 
-	request.Header.Set("Authorization", fmt.Sprintf("Basic %v", encodedCredentials))
+	request.Header.Add("Authorization", fmt.Sprintf("Basic %v", encodedCredentials))
 
 
 
