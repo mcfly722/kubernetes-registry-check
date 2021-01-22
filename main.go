@@ -46,6 +46,11 @@ type RegistryChecker struct {
 	Done chan struct{}
 }
 
+type RegistryRepositories struct {
+	Repositories []string
+	Message      string
+}
+
 func (checker *RegistryChecker) Destroy() {
 	close(checker.Done)
 }
@@ -142,6 +147,19 @@ func checkRegistry(url string, userName string, password string) *RegistryConnec
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		result.Message = err.Error()
+		return result
+	}
+
+	var registryRepositories RegistryRepositories
+
+	err = json.Unmarshal(body, &registryRepositories)
+	if err != nil {
+		result.Message = err.Error()
+		return result
+	}
+
+	if len(registryRepositories.Message) > 0 {
+		result.Message = registryRepositories.Message
 		return result
 	}
 
