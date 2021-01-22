@@ -112,22 +112,26 @@ func getRegistries(k8s *k8s, namespace string) (map[string]*Registry, error) {
 
 func checkRegistry(url string, userName string, password string) *RegistryConnectionResultRecord {
 
-	fullUrl := fmt.Sprintf("https://%v/v2/_catalog", url)
-
-	encodedCredentials := base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%v,%v", userName, password)))
-
-	request, err := http.Get(fullUrl)
-	request.Header.Set("Authorization", fmt.Sprintf("Basic %v", encodedCredentials))
-
 	response := &RegistryConnectionResultRecord{
 		Url:     url,
 		Success: false,
 	}
 
+	fullUrl := fmt.Sprintf("https://%v/v2/_catalog", url)
+
+	encodedCredentials := base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%v,%v", userName, password)))
+
+	fmt.Println(fmt.Sprintf("http request: %v", fullUrl))
+
+	request, err := http.Get(fullUrl)
 	if err != nil {
 		response.Message = err.Error()
 		return response
 	}
+
+	request.Header.Set("Authorization", fmt.Sprintf("Basic %v", encodedCredentials))
+
+
 
 	body, err := ioutil.ReadAll(request.Body)
 	if err != nil {
