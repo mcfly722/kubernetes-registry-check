@@ -119,7 +119,7 @@ func checkRegistry(url string, userName string, password string) *RegistryConnec
 
 	fullUrl := fmt.Sprintf("https://%v/v2/_catalog", url)
 
-	encodedCredentials := base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%v,%v", userName, password)))
+	encodedCredentials := base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%v:%v", userName, password)))
 
 	fmt.Println(fmt.Sprintf("http request: %v", fullUrl))
 
