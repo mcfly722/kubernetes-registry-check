@@ -160,7 +160,7 @@ func checkRegistry(url string, userName string, password string) *RegistryConnec
 
 	err = json.Unmarshal(body, &registryRepositories)
 	if err != nil {
-		result.Message = err.Error()
+		result.Message = fmt.Sprintf("%v content:%v", err.Error(), body)
 		return result
 	}
 
