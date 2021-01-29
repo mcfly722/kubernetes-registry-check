@@ -30,10 +30,11 @@ func (pod Pod) hash() string {
 }
 
 type RegistryConnectionResultRecord struct {
-	Source  Pod
-	Url     string
-	Message string
-	Success bool
+	Timestamp   string
+	Source      Pod
+	Destination string
+	Message     string
+	Success     bool
 }
 
 func (record *RegistryConnectionResultRecord) toString() string {
@@ -158,9 +159,10 @@ func getRegistries(k8s *k8s, namespace string) (map[string]*Registry, error) {
 func checkRegistry(source *Pod, url string, userName string, password string) *RegistryConnectionResultRecord {
 
 	result := &RegistryConnectionResultRecord{
-		Source : *source, 
-		Url    : url,
-		Success: false,
+		Timestamp   : time.Now().Format(time.RFC3339),
+		Source      : *source, 
+		Destination : url,
+		Success     : false,
 	}
 
 	fullUrl := fmt.Sprintf("https://%v/v2/_catalog", url)
