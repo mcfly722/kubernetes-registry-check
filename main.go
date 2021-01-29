@@ -7,14 +7,30 @@ import (
 	"io/ioutil"
 	"net/http"
 	"crypto/tls"
+	"strings"
+	"errors"
 	"time"
-
+	"net"
+	
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
+type Pod struct {
+	PodName  string
+	PodIP    string
+	HostName string
+	HostIP   string
+}
+
+func (pod Pod) hash() string {
+	s, _ := json.Marshal(pod)
+	return string(s)
+}
+
 type RegistryConnectionResultRecord struct {
+	Source  Pod
 	Url     string
 	Message string
 	Success bool
@@ -63,6 +79,24 @@ func (checker *RegistryChecker) Destroy() {
 
 type k8s struct {
 	clientset kubernetes.Interface
+}
+
+func contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+	return false
+}
+
+func newPod(podName string, podIP string, hostName string, hostIP string) *Pod {
+	return &Pod{
+		PodName:  podName,
+		PodIP:    podIP,
+		HostName: hostName,
+		HostIP:   hostIP,
+	}
 }
 
 func newK8s() (*k8s, error) {
@@ -121,10 +155,11 @@ func getRegistries(k8s *k8s, namespace string) (map[string]*Registry, error) {
 	return registries, nil
 }
 
-func checkRegistry(url string, userName string, password string) *RegistryConnectionResultRecord {
+func checkRegistry(source *Pod, url string, userName string, password string) *RegistryConnectionResultRecord {
 
 	result := &RegistryConnectionResultRecord{
-		Url:     url,
+		Source : *source, 
+		Url    : url,
 		Success: false,
 	}
 
@@ -175,7 +210,7 @@ func checkRegistry(url string, userName string, password string) *RegistryConnec
 	return result
 }
 
-func newRegistryChecker(registry *Registry, intervalSec int, output chan RegistryConnectionResultRecord, checkRegistry func(url string, userName string, password string) *RegistryConnectionResultRecord) (*RegistryChecker, error) {
+func newRegistryChecker(sourcePod *Pod, registry *Registry, intervalSec int, output chan RegistryConnectionResultRecord, checkRegistry func(sourcePod *Pod, url string, userName string, password string) *RegistryConnectionResultRecord) (*RegistryChecker, error) {
 
 	checker := RegistryChecker{
 		Done: make(chan struct{}),
@@ -189,7 +224,7 @@ func newRegistryChecker(registry *Registry, intervalSec int, output chan Registr
 				break working
 			default:
 				{
-					record := checkRegistry(registry.Url, registry.UserName, registry.Password)
+					record := checkRegistry(sourcePod, registry.Url, registry.UserName, registry.Password)
 
 					output <- *record
 
@@ -204,7 +239,90 @@ func newRegistryChecker(registry *Registry, intervalSec int, output chan Registr
 	return &checker, nil
 }
 
-func newRegistryPool(k8s *k8s, namespace string, output chan RegistryConnectionResultRecord, configRefreshInterval time.Duration, checkIntervalSec int, checkRegistry func(url string, userName string, password string) *RegistryConnectionResultRecord) {
+func getPods(k8s *k8s, namespace string, podPrefix string) (map[string]Pod, error) {
+	result := make(map[string]Pod)
+
+	pods, err := k8s.clientset.CoreV1().Pods(namespace).List(metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pod := range pods.Items {
+		if strings.HasPrefix(strings.ToUpper(pod.GetName()), strings.ToUpper(podPrefix)) {
+
+			if pod.Status.Phase == "Running" {
+				pod := Pod{
+					PodName:  pod.GetName(),
+					PodIP:    pod.Status.PodIP,
+					HostName: pod.Spec.NodeName,
+					HostIP:   pod.Status.HostIP}
+
+				result[pod.hash()] = pod
+			}
+		}
+	}
+
+	return result, nil
+}
+
+func getUsedIPs() ([]string, error) {
+	ips := []string{}
+
+	ifaces, err := net.Interfaces()
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, i := range ifaces {
+		addrs, err := i.Addrs()
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			ips = append(ips, fmt.Sprintf("%v", ip))
+		}
+	}
+
+	return ips, nil
+}
+
+
+func getSourcePod(k8s *k8s, namespace string, podsPrefix string) (*Pod, error){
+	ips, err := getUsedIPs()
+	if err != nil {
+		return nil, err
+	}
+
+	pods, err := getPods(k8s, namespace, podsPrefix)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pod := range pods { 
+		if contains(ips, pod.PodIP) {
+			return &pod, nil
+		}
+	}
+
+	return nil, errors.New(fmt.Sprintf("Could not found pod with '%v' prefix in '%v' namespace with eny of next ips: %v", podsPrefix, namespace, ips))
+}
+
+func newRegistryPool(k8s *k8s, namespace string, podsPrefix string, output chan RegistryConnectionResultRecord, configRefreshInterval time.Duration, checkIntervalSec int, checkRegistry func(sourcePod *Pod, url string, userName string, password string) *RegistryConnectionResultRecord) {
+
+	sourcePod, err := getSourcePod(k8s, namespace, podsPrefix)
+	if err != nil {
+		panic(err)
+	}
 
 	checkers := map[string]*RegistryChecker{}
 
@@ -219,7 +337,7 @@ func newRegistryPool(k8s *k8s, namespace string, output chan RegistryConnectionR
 				if !registryIsAlreadyChecking {
 					// add new registry check
 
-					checker, err := newRegistryChecker(registry, checkIntervalSec, output, checkRegistry)
+					checker, err := newRegistryChecker(sourcePod, registry, checkIntervalSec, output, checkRegistry)
 					if err != nil {
 						fmt.Println(fmt.Sprintf("error for %v: %v", registry.Name, err))
 					} else {
@@ -250,10 +368,13 @@ func main() {
 	var namespaceFlag *string
 	var updateConfigSecFlag *int
 	var checkIntervalSecFlag *int
+	var podsPrefixFlag *string
+
 
 	updateConfigSecFlag = flag.Int("updateConfigIntervalSec", 30, "interval in seconds between asking cluster for ping pods configuration")
 	checkIntervalSecFlag = flag.Int("checkIntervalSec", 3, "interval between registry checks")
 	namespaceFlag = flag.String("namespace", "monitoring", "current pod namespace where search registry secret records")
+	podsPrefixFlag = flag.String("podsPrefix", "kubernetes-registry-check", "pods prefix")
 
 	flag.Parse()
 
@@ -269,7 +390,7 @@ func main() {
 	output := make(chan RegistryConnectionResultRecord)
 
 	go func() {
-		newRegistryPool(k8s, *namespaceFlag, output, time.Duration(*updateConfigSecFlag)*time.Second, *checkIntervalSecFlag, checkRegistry)
+		newRegistryPool(k8s, *namespaceFlag,*podsPrefixFlag, output, time.Duration(*updateConfigSecFlag)*time.Second, *checkIntervalSecFlag, checkRegistry)
 	}()
 
 	// write to output all records
