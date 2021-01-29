@@ -1,17 +1,17 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"net/http"
-	"crypto/tls"
-	"strings"
-	"errors"
-	"time"
 	"net"
-	
+	"net/http"
+	"strings"
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -159,20 +159,20 @@ func getRegistries(k8s *k8s, namespace string) (map[string]*Registry, error) {
 func checkRegistry(source *Pod, url string, userName string, password string) *RegistryConnectionResultRecord {
 
 	result := &RegistryConnectionResultRecord{
-		Timestamp   : time.Now().Format(time.RFC3339),
-		Source      : *source, 
-		Destination : url,
-		Success     : false,
+		Timestamp:   time.Now().Format(time.RFC3339),
+		Source:      *source,
+		Destination: url,
+		Success:     false,
 	}
 
 	fullUrl := fmt.Sprintf("https://%v/v2/_catalog", url)
 
 	transport := &http.Transport{
-        TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-    }
-	
-    client := &http.Client{Transport: transport}
-	
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	client := &http.Client{Transport: transport}
+
 	request, err := http.NewRequest("GET", fullUrl, nil)
 	if err != nil {
 		result.Message = err.Error()
@@ -180,7 +180,7 @@ func checkRegistry(source *Pod, url string, userName string, password string) *R
 	}
 
 	request.SetBasicAuth(userName, password)
-	
+
 	response, err := client.Do(request)
 	if err != nil {
 		result.Message = err.Error()
@@ -208,7 +208,7 @@ func checkRegistry(source *Pod, url string, userName string, password string) *R
 
 	result.Message = string(body)
 	result.Success = true
-	
+
 	return result
 }
 
@@ -298,8 +298,7 @@ func getUsedIPs() ([]string, error) {
 	return ips, nil
 }
 
-
-func getSourcePod(k8s *k8s, namespace string, podsPrefix string) (*Pod, error){
+func getSourcePod(k8s *k8s, namespace string, podsPrefix string) (*Pod, error) {
 	ips, err := getUsedIPs()
 	if err != nil {
 		return nil, err
@@ -310,7 +309,7 @@ func getSourcePod(k8s *k8s, namespace string, podsPrefix string) (*Pod, error){
 		return nil, err
 	}
 
-	for _, pod := range pods { 
+	for _, pod := range pods {
 		if contains(ips, pod.PodIP) {
 			return &pod, nil
 		}
@@ -325,6 +324,8 @@ func newRegistryPool(k8s *k8s, namespace string, podsPrefix string, output chan 
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Println(fmt.Sprintf("Started in source pod=%v", sourcePod))
 
 	checkers := map[string]*RegistryChecker{}
 
@@ -372,7 +373,6 @@ func main() {
 	var checkIntervalSecFlag *int
 	var podsPrefixFlag *string
 
-
 	updateConfigSecFlag = flag.Int("updateConfigIntervalSec", 30, "interval in seconds between asking cluster for ping pods configuration")
 	checkIntervalSecFlag = flag.Int("checkIntervalSec", 3, "interval between registry checks")
 	namespaceFlag = flag.String("namespace", "monitoring", "current pod namespace where search registry secret records")
@@ -387,12 +387,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(fmt.Sprintf("Started"))
 
 	output := make(chan RegistryConnectionResultRecord)
 
 	go func() {
-		newRegistryPool(k8s, *namespaceFlag,*podsPrefixFlag, output, time.Duration(*updateConfigSecFlag)*time.Second, *checkIntervalSecFlag, checkRegistry)
+
+		time.Sleep(5 * time.Second) // wait 5 seconds, pod network could not start so fast
+
+		newRegistryPool(k8s, *namespaceFlag, *podsPrefixFlag, output, time.Duration(*updateConfigSecFlag)*time.Second, *checkIntervalSecFlag, checkRegistry)
 	}()
 
 	// write to output all records
