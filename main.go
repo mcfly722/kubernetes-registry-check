@@ -391,9 +391,6 @@ func main() {
 	output := make(chan RegistryConnectionResultRecord)
 
 	go func() {
-
-		time.Sleep(5 * time.Second) // wait 5 seconds, pod network could not start so fast
-
 		newRegistryPool(k8s, *namespaceFlag, *podsPrefixFlag, output, time.Duration(*updateConfigSecFlag)*time.Second, *checkIntervalSecFlag, checkRegistry)
 	}()
 
