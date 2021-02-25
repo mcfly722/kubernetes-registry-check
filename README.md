@@ -36,13 +36,12 @@ or failed example (dns problem):
 ```
 
 ### Deployment
-Current configuration deploys DaemonSet to **monitoring** namespace. To deploy in another namespace (f.e. kube-system) you have to modify yaml and use appropriate name in kubectl commands.
+Current configuration deploys DaemonSet to **monitoring** namespace. To deploy in another namespace (f.e. kube-system) you have to modify kubernetes-registry-check.yaml.
 
 ```
 ./kubectl --server "<your k8s cluster address>" --token "<your token here>" --insecure-skip-tls-verify apply -f "kubernetes-registry-check.yaml"
 ```
 ### Adding new registry for monitoring
-To add new registry for monitoring use next command:
 ```
 ./kubectl --server "<your k8s cluster address>" --token "<your token here>" --insecure-skip-tls-verify create secret docker-registry registry --namespace monitoring --docker-server="<registry address>" --docker-username="<registry user name>" --docker-password="<registry password>"
 ```
