@@ -35,7 +35,7 @@ or failed example (dns problem):
 }
 ```
 
-### Configuration
+### Deployment
 Current configuration deploys DaemonSet to **monitoring** namespace. To deploy in another namespace (f.e. kube-system) you have to modify yaml and use appropriate name in kubectl commands.
 
 ```
