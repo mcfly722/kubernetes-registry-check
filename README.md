@@ -1,7 +1,7 @@
 # kubernetes-registry-check
 
 DaemonSet checks ability to connect from each Kubernetes cluster node to specified registries.
-Results printed in json format and further could be handled by other monitoring system (f.e. FluentD to ElasticSearch).
+Results printed in json format and then could be handled by other monitoring system (f.e. FluentD to ElasticSearch).
 
 
 Example of output json (preformatted):
