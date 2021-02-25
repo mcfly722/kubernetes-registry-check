@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-registry-check-serviceaccount
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: kubernetes-registry-check-clusterrole
+  namespace: monitoring
+rules:
+  - apiGroups: ["*"]
+    resources: ["secrets","pods"]
+    verbs: ["get","list","watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-registry-check-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernetes-registry-check-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: kubernetes-registry-check-serviceaccount
+  namespace: monitoring
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kubernetes-registry-check
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      name: kubernetes-registry-check
+  template:
+    metadata:
+      labels:
+        name: kubernetes-registry-check
+    spec:
+      serviceAccount: kubernetes-registry-check-serviceaccount
+      serviceAccountName: kubernetes-registry-check-serviceaccount
+      tolerations:
+        - operator: Exists
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: beta.kubernetes.io/os
+                operator: NotIn
+                values:
+                - windows
+      containers:
+      - name: kubernetes-registry-check
+        image: mcfly722/kubernetes-registry-check:latest
+        command:
+          - /kubernetes-registry-check
+        args: ["-namespace","monitoring","-checkIntervalSec","60"]
+        env:
+        resources:
+          limits:
+            cpu: 30m
+            memory: 50Mi
+          requests:
+            cpu: 30m
+            memory: 50Mi
