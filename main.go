@@ -320,9 +320,17 @@ func getSourcePod(k8s *k8s, namespace string, podsPrefix string) (*Pod, error) {
 
 func newRegistryPool(k8s *k8s, namespace string, podsPrefix string, output chan RegistryConnectionResultRecord, configRefreshInterval time.Duration, checkIntervalSec int, checkRegistry func(sourcePod *Pod, url string, userName string, password string) *RegistryConnectionResultRecord) {
 
-	sourcePod, err := getSourcePod(k8s, namespace, podsPrefix)
-	if err != nil {
-		panic(err)
+	var sourcePod *Pod
+
+	sourcePodObtained: for {
+		pod, err := getSourcePod(k8s, namespace, podsPrefix)
+		if err != nil {
+			fmt.Println(fmt.Sprintf("Could not obtain source pod, error=%v",err));
+			time.Sleep(configRefreshInterval)
+		} else {
+			sourcePod = pod
+			break sourcePodObtained
+		}
 	}
 
 	fmt.Println(fmt.Sprintf("Started in source pod=%v", sourcePod))
