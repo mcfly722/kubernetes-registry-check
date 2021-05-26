@@ -380,21 +380,28 @@ func main() {
 	var updateConfigSecFlag *int
 	var checkIntervalSecFlag *int
 	var podsPrefixFlag *string
+	var maxErrorsFlag *int
 
 	updateConfigSecFlag = flag.Int("updateConfigIntervalSec", 30, "interval in seconds between asking cluster for ping pods configuration")
 	checkIntervalSecFlag = flag.Int("checkIntervalSec", 3, "interval between registry checks")
 	namespaceFlag = flag.String("namespace", "monitoring", "current pod namespace where search registry secret records")
 	podsPrefixFlag = flag.String("podsPrefix", "kubernetes-registry-check", "pods prefix")
+	maxErrorsFlag = flag.Int("maxErrors", 10, "number of consecutive errors for quit")
 
 	flag.Parse()
 
-	fmt.Println(fmt.Sprintf("namespace = %s", *namespaceFlag))
 	fmt.Println(fmt.Sprintf("updateConfigIntervalSec = %v", *updateConfigSecFlag))
+	fmt.Println(fmt.Sprintf("checkIntervalSec = %v", *checkIntervalSecFlag))
+	fmt.Println(fmt.Sprintf("namespace = %s", *namespaceFlag))
+	fmt.Println(fmt.Sprintf("podsPrefix = %s", *podsPrefixFlag))
+	fmt.Println(fmt.Sprintf("maxErrors = %v", *maxErrorsFlag))
 
 	k8s, err := newK8s()
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Println("Started.")
 
 	output := make(chan RegistryConnectionResultRecord)
 
@@ -402,13 +409,25 @@ func main() {
 		newRegistryPool(k8s, *namespaceFlag, *podsPrefixFlag, output, time.Duration(*updateConfigSecFlag)*time.Second, *checkIntervalSecFlag, checkRegistry)
 	}()
 
+	errorCounter := 0
+
 	// write to output all records
 	for {
 		time.Sleep(10 * time.Millisecond)
 
 		record, ok := <-output
 		if !ok {
-			break
+			fmt.Println(fmt.Sprintf("Error (%v/%v): %s", errorCounter, maxErrorsFlag, record.Message))
+			time.Sleep(30 * time.Second)
+			errorCounter++
+			
+			if errorCounter > *maxErrorsFlag {
+				fmt.Println(fmt.Sprintf("Too many consecutive errors. Quit.", record.Message))
+				break
+			}
+
+		} else {
+			errorCounter = 0
 		}
 
 		fmt.Println(record.toString())
